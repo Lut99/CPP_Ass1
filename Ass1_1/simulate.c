@@ -6,15 +6,36 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <pthread.h>
 
 #include "simulate.h"
 
+typedef struct {
+    pthread_t t_id;
+    int id;
+    int work_size;
+} Thread;
 
 /* Add any global variables you may need. */
 const double c = 0.15;
+double *global_old_array;
+double *global_current_array;
+double *global_next_array;
 
 /* Add any functions you may need (like a worker) here. */
+void *thread_func(void *args) {
+    Thread *t = (Thread*) args;
 
+    int t_i = t->id * t->work_size;
+    for (int i = t_i; i < t_i + t->work_size; i++) {
+        global_next_array[i] = 2 * global_current_array[i] - 
+                                global_old_array[i] + c * 
+                                (global_current_array[i - 1] - 
+                                (2 * global_current_array[i] - 
+                                global_current_array[i + 1]));
+    }
+    return NULL;
+}
 
 /*
  * Executes the entire simulation.
@@ -32,19 +53,43 @@ double *simulate(const int i_max, const int t_max, const int num_threads,
         double *old_array, double *current_array, double *next_array)
 {
     /* Simulate a fucking wave */
-    int t, i;
+    int t, i, work_size;
     double *temp;
+    Thread threads[num_threads];
+
+    work_size = (i_max - 2) / num_threads;
+
+    // Assign the globals
+    global_old_array = old_array;
+    global_current_array = current_array;
+    global_next_array = next_array;
 
     for (t = 0; t < t_max; t++) {
-        for (i = 1; i < i_max - 1; i++) {
-            next_array[i] = 2 * current_array[i] - old_array[i] + c * 
-                            (current_array[i - 1] - 
-                            (2 * current_array[i] - current_array[i + 1]));
+        // Create n_threads threads
+        for (i = 0; i < num_threads; i++) {
+            // Create the threads
+            threads[i].id = i;
+            threads[i].work_size = work_size;
+            pthread_create(&threads[i].t_id, NULL, &thread_func, (void*) &t);
         }
-        temp = old_array;
-        old_array = current_array;
-        current_array = next_array;
-        next_array = temp;
+        // Do the leftover work
+        for (i = num_threads * work_size; i < i_max; i++) {
+            global_next_array[i] = 2 * global_current_array[i] - 
+                                   global_old_array[i] + c * 
+                                   (global_current_array[i - 1] - 
+                                   (2 * global_current_array[i] - 
+                                   global_current_array[i + 1]));
+        }
+        // Wait for all threads to reap
+        for (i = 0; i < num_threads; i++) {
+            pthread_join(threads[i].t_id, NULL);
+        }
+
+        // Swap the arrays for the next iteration
+        temp = global_old_array;
+        global_old_array = global_current_array;
+        global_current_array = global_next_array;
+        global_next_array = temp;
     }
 
     /* You should return a pointer to the array with the final results. */
