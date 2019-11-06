@@ -2,7 +2,8 @@
 
 Ass 1.1
 - I'm so fucking grateful for my ass.
-- Create sequential baseline
+- Create sequential baseline (Took 2.09415 seconds
+                              Normalized: 2.09415e-09 seconds)
 - We can parallelise one time step
     - This means creating threads for each timestep
 - Then, we try to avoid destroying threads by using conditional codes and mutexes.
