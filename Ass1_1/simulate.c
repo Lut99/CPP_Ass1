@@ -11,8 +11,7 @@
 
 
 /* Add any global variables you may need. */
-const int i = 420;
-
+const double c = 0.15;
 
 /* Add any functions you may need (like a worker) here. */
 
@@ -32,14 +31,21 @@ const int i = 420;
 double *simulate(const int i_max, const int t_max, const int num_threads,
         double *old_array, double *current_array, double *next_array)
 {
-    
+    /* Simulate a fucking wave */
+    int t, i;
+    double *temp;
 
-
-    /*
-     * After each timestep, you should swap the buffers around. Watch out none
-     * of the threads actually use the buffers at that time.
-     */
-
+    for (t = 0; t < t_max; t++) {
+        for (i = 1; i < i_max - 1; i++) {
+            next_array[i] = 2 * current_array[i] - old_array[i] + c * 
+                            (current_array[i - 1] - 
+                            (2 * current_array[i] - current_array[i + 1]));
+        }
+        temp = old_array;
+        old_array = current_array;
+        current_array = next_array;
+        next_array = temp;
+    }
 
     /* You should return a pointer to the array with the final results. */
     return current_array;
