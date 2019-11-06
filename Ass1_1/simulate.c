@@ -11,6 +11,7 @@
 
 
 /* Add any global variables you may need. */
+const int i = 420;
 
 
 /* Add any functions you may need (like a worker) here. */
@@ -31,7 +32,7 @@
 double *simulate(const int i_max, const int t_max, const int num_threads,
         double *old_array, double *current_array, double *next_array)
 {
-
+    
 
 
     /*
