@@ -26,7 +26,7 @@ double *global_next_array;
 void *thread_func(void *args) {
     Thread *t = (Thread*) args;
 
-    int t_i = t->id * t->work_size;
+    int t_i = t->id * t->work_size + 1;
     for (int i = t_i; i < t_i + t->work_size; i++) {
         global_next_array[i] = 2 * global_current_array[i] - 
                                 global_old_array[i] + c * 
@@ -34,6 +34,7 @@ void *thread_func(void *args) {
                                 (2 * global_current_array[i] - 
                                 global_current_array[i + 1]));
     }
+
     return NULL;
 }
 
@@ -55,9 +56,13 @@ double *simulate(const int i_max, const int t_max, const int num_threads,
     /* Simulate a fucking wave */
     int t, i, work_size;
     double *temp;
-    Thread threads[num_threads];
+    Thread *threads[num_threads];
 
-    work_size = (i_max - 2) / num_threads;
+    if (num_threads == 0) {
+        work_size = 0;
+    } else {
+        work_size = (i_max - 2) / num_threads;
+    }
 
     // Assign the globals
     global_old_array = old_array;
@@ -68,9 +73,10 @@ double *simulate(const int i_max, const int t_max, const int num_threads,
         // Create n_threads threads
         for (i = 0; i < num_threads; i++) {
             // Create the threads
-            threads[i].id = i;
-            threads[i].work_size = work_size;
-            pthread_create(&threads[i].t_id, NULL, &thread_func, (void*) &t);
+            threads[i] = (Thread*) malloc(sizeof(Thread));
+            threads[i]->id = i;
+            threads[i]->work_size = work_size;
+            pthread_create(&threads[i]->t_id, NULL, &thread_func, (void*) threads[i]);
         }
         // Do the leftover work
         for (i = num_threads * work_size; i < i_max; i++) {
@@ -80,9 +86,11 @@ double *simulate(const int i_max, const int t_max, const int num_threads,
                                    (2 * global_current_array[i] - 
                                    global_current_array[i + 1]));
         }
-        // Wait for all threads to reap
+        // Reap all threads now that we've done the overflowing items
         for (i = 0; i < num_threads; i++) {
-            pthread_join(threads[i].t_id, NULL);
+            pthread_join(threads[i]->t_id, NULL);
+            // Clean up
+            free(threads[i]);
         }
 
         // Swap the arrays for the next iteration
