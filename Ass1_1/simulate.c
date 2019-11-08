@@ -31,7 +31,6 @@ void *thread_func(void *args) {
     int t, i;
     int t_max, start_i, stop_i;
 
-    fflush(stdout);
     // Initialize private variables
     start_i = trd->start_i;
     stop_i = trd->stop_i;
@@ -42,16 +41,16 @@ void *thread_func(void *args) {
 
     // Do the timesteps
     for (t = 0; t < t_max; t++) {
-        printf("--------\nThread %i did a new timestep %i\n--------\n", trd->start_i, t);
-        fflush(stdout);
+        //printf("--------\nThread %i did a new timestep %i\n--------\n", trd->start_i, t);
+        //fflush(stdout);
         for (i = start_i; i < stop_i; i++) {
             next_array[i] = 2 * current_array[i] - 
                             old_array[i] + c * 
                             (current_array[i - 1] - 
                             (2 * current_array[i] - 
                             current_array[i + 1]));
-            printf("Thread %i did a spatial step (new value: %f)\n", trd->start_i, next_array[i]);
-            fflush(stdout);
+            //printf("Thread %i did a spatial step (new value: %f)\n", trd->start_i, next_array[i]);
+            //fflush(stdout);
         }
 
         // Swap the buffers
