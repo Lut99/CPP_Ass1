@@ -18,7 +18,11 @@ typedef struct {
     double *old_array;
     double *current_array;
     double *next_array;
-    pthread_barrier_t *barrier;
+    // Declare stuff for the "barrier"
+    pthread_mutex_t *lock;
+    pthread_cond_t *can_continue;
+    int *threads_done;
+    int n_threads;
 } Thread;
 
 /* Add any global variables you may need. */
@@ -38,6 +42,12 @@ void *thread_func(void *args) {
     old_array = trd->old_array;
     current_array = trd->current_array;
     next_array = trd->next_array;
+
+    // Initialize barrier related variables
+    pthread_mutex_t *lock = trd->lock;
+    pthread_cond_t *can_continue = trd->can_continue;
+    int *threads_done = trd->threads_done;
+    int n_threads = trd->n_threads;
 
     // Do the timesteps
     for (t = 0; t < t_max; t++) {
@@ -59,8 +69,29 @@ void *thread_func(void *args) {
         current_array = next_array;
         next_array = temp;
         
-        // Wait until the other threads are done with this timestep
-        pthread_barrier_wait(trd->barrier);
+        /* Use critical regions and condition variables to mimic barrier
+         * behaviour. The workings are as follows:
+         *   1) Lock the region so that this code is sequential
+         *   2) This thread is done, do increment the counter
+         *   3) IF we're the last thread to enter this state, we signal
+         *      that everyone is ready and we continue.
+         *   4) ELSE, wait until all threads are done by waiting for the
+         *      signal to be send
+         *   5) Finally, unlock the region
+         */
+
+        pthread_mutex_lock(lock);
+        (*threads_done)++;
+        if ((*threads_done) == n_threads) {
+            // If we're the last thread, do not wait and instead send the
+            //   signal
+            pthread_cond_broadcast(can_continue);
+        } else {
+            while ((*threads_done) < n_threads) {
+                pthread_cond_wait(can_continue, lock);
+            }
+        }
+        pthread_mutex_unlock(lock);
     }
     
     // Before returning, save the current_array as result
@@ -88,9 +119,10 @@ double *simulate(const int i_max, const int t_max, const int num_threads,
 
     /* INITIALIZATION PHASE */
 
-    int i, work_size;
+    int i, work_size, threads_done;
     Thread *threads;
-    pthread_barrier_t swap_barrier;
+    pthread_mutex_t lock;
+    pthread_cond_t signal;
 
     // Divide the work (with DivideByZero protection)
     if (num_threads == 0) {
@@ -99,8 +131,10 @@ double *simulate(const int i_max, const int t_max, const int num_threads,
         work_size = (i_max - 2) / num_threads;
     }
 
-    // Declare the barrier
-    pthread_barrier_init(&swap_barrier, NULL, num_threads);
+    // Init the lock & counter
+    pthread_mutex_init(&lock, NULL);
+    pthread_cond_init(&signal, NULL);
+    threads_done = 0;
 
     // Allocate the arguments array
     threads = (Thread*) malloc(num_threads * sizeof(Thread));
@@ -114,11 +148,17 @@ double *simulate(const int i_max, const int t_max, const int num_threads,
         threads[i].old_array = old_array;
         threads[i].current_array = current_array;
         threads[i].next_array = next_array;
-        threads[i].barrier = &swap_barrier;
         if (i == num_threads - 1) {
             // Instead of the standard worksize, assign the rest of the timestep
             threads[i].stop_i = i_max - 2;
         }
+
+        // Pass stuff for the barrier
+        threads[i].lock = &lock;
+        threads[i].can_continue = &signal;
+        threads[i].threads_done = &threads_done;
+        threads[i].n_threads = num_threads;
+
         // Use it to create the thread
         pthread_create(&threads[i].t_id, NULL, &thread_func, (void*) &threads[i]);
     }
@@ -133,7 +173,8 @@ double *simulate(const int i_max, const int t_max, const int num_threads,
     }
     
     // Destroy the synchronisation barrier
-    pthread_barrier_destroy(&swap_barrier);
+    pthread_mutex_destroy(&lock);
+    pthread_cond_destroy(&signal);
 
     // Destroy the argument array
     free(threads);
