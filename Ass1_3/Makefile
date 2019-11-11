@@ -1,5 +1,5 @@
 PROGNAME = sieve
-SRCFILES = sieve.c
+SRCFILES = sieve.c timer.c
 TARNAME = sieve
 
 # i_max t_max num_threads
