@@ -79,7 +79,7 @@ double *simulate(const int i_max, const int t_max, const int num_threads,
             pthread_create(&threads[i]->t_id, NULL, &thread_func, (void*) threads[i]);
         }
         // Do the leftover work
-        for (i = num_threads * work_size; i < i_max; i++) {
+        for (i = num_threads * work_size; i < i_max - 1; i++) {
             global_next_array[i] = 2 * global_current_array[i] - 
                                    global_old_array[i] + c * 
                                    (global_current_array[i - 1] - 
