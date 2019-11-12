@@ -10,6 +10,16 @@
 
 #include "simulate.h"
 
+// Determines the status of the thread.
+//   0 = busy with timestep
+//   1 = waiting for other threads
+//   2 = signal from main threads that they can continue
+//   3 = the thread is done
+#define THREAD_BUSY 0
+#define THREAD_WAITING 1
+#define THREAD_CONTINUE 2
+#define THREAD_DONE 3
+
 typedef struct {
     pthread_t t_id;
     int start_i;
@@ -21,8 +31,7 @@ typedef struct {
     // Declare stuff for the "barrier"
     pthread_mutex_t *lock;
     pthread_cond_t *can_continue;
-    int *threads_done;
-    int n_threads;
+    char status;
 } Thread;
 
 /* Add any global variables you may need. */
@@ -46,21 +55,15 @@ void *thread_func(void *args) {
     // Initialize barrier related variables
     pthread_mutex_t *lock = trd->lock;
     pthread_cond_t *can_continue = trd->can_continue;
-    int *threads_done = trd->threads_done;
-    int n_threads = trd->n_threads;
 
     // Do the timesteps
     for (t = 0; t < t_max; t++) {
-        //printf("--------\nThread %i did a new timestep %i\n--------\n", trd->start_i, t);
-        //fflush(stdout);
         for (i = start_i; i < stop_i; i++) {
             next_array[i] = 2 * current_array[i] - 
                             old_array[i] + c * 
                             (current_array[i - 1] - 
                             (2 * current_array[i] - 
                             current_array[i + 1]));
-            //printf("Thread %i did a spatial step (new value: %f)\n", trd->start_i, next_array[i]);
-            //fflush(stdout);
         }
 
         // Swap the buffers
@@ -69,32 +72,19 @@ void *thread_func(void *args) {
         current_array = next_array;
         next_array = temp;
         
-        /* Use critical regions and condition variables to mimic barrier
-         * behaviour. The workings are as follows:
-         *   1) Lock the region so that this code is sequential
-         *   2) This thread is done, do increment the counter
-         *   3) IF we're the last thread to enter this state, we signal
-         *      that everyone is ready and we continue.
-         *   4) ELSE, wait until all threads are done by waiting for the
-         *      signal to be send
-         *   5) Finally, unlock the region
-         */
-
+        // Now that we're done, set own status to waiting and sleep until the
+        //   main thread signals we can continue
         pthread_mutex_lock(lock);
-        (*threads_done)++;
-        if ((*threads_done) == n_threads) {
-            // If we're the last thread, do not wait and instead send the
-            //   signal
-            pthread_cond_broadcast(can_continue);
-        } else {
-            while ((*threads_done) < n_threads) {
-                pthread_cond_wait(can_continue, lock);
-            }
+        trd->status = THREAD_WAITING;
+        while (trd->status != THREAD_CONTINUE) {
+            pthread_cond_wait(can_continue, lock);
         }
+        trd->status = THREAD_BUSY;
         pthread_mutex_unlock(lock);
     }
     
     // Before returning, save the current_array as result
+    trd->status = THREAD_DONE;
     trd->current_array = current_array;
 
     return NULL;
@@ -119,7 +109,7 @@ double *simulate(const int i_max, const int t_max, const int num_threads,
 
     /* INITIALIZATION PHASE */
 
-    int i, work_size, threads_done;
+    int i, work_size, threads_done, threads_waiting;
     Thread *threads;
     pthread_mutex_t lock;
     pthread_cond_t signal;
@@ -134,7 +124,6 @@ double *simulate(const int i_max, const int t_max, const int num_threads,
     // Init the lock & counter
     pthread_mutex_init(&lock, NULL);
     pthread_cond_init(&signal, NULL);
-    threads_done = 0;
 
     // Allocate the arguments array
     threads = (Thread*) malloc(num_threads * sizeof(Thread));
@@ -150,17 +139,44 @@ double *simulate(const int i_max, const int t_max, const int num_threads,
         threads[i].next_array = next_array;
         if (i == num_threads - 1) {
             // Instead of the standard worksize, assign the rest of the timestep
-            threads[i].stop_i = i_max - 2;
+            threads[i].stop_i = i_max - 1;
         }
 
         // Pass stuff for the barrier
         threads[i].lock = &lock;
         threads[i].can_continue = &signal;
-        threads[i].threads_done = &threads_done;
-        threads[i].n_threads = num_threads;
+        threads[i].status = 0;
 
         // Use it to create the thread
         pthread_create(&threads[i].t_id, NULL, &thread_func, (void*) &threads[i]);
+    }
+
+    /* RUN PHASE */
+
+    // Police the threads so that they wait for each other
+    while (1) {
+        threads_done = 0;
+        threads_waiting = 0;
+        // Count how many threads are waiting and how many are done
+        for (i = 0; i < num_threads; i++) {
+            if (threads[i].status == THREAD_WAITING) {
+                threads_waiting++;
+            } else if (threads[i].status == THREAD_DONE) {
+                threads_done++;
+            }
+        }
+        if (threads_waiting == num_threads) {
+            // In case they're all waiting, allow them to continue
+            for (i = 0; i < num_threads; i++) {
+                threads[i].status = THREAD_CONTINUE;
+            }
+            pthread_mutex_lock(&lock);
+            pthread_cond_broadcast(&signal);
+            pthread_mutex_unlock(&lock);
+        } else if (threads_done == num_threads) {
+            // Otherwise, if they're all done, stop
+            break;
+        }
     }
 
     /* CLEANUP PHASE */
